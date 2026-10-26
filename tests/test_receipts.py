@@ -36,9 +36,11 @@ def run_record(home, sid, tool, tin, tout=None):
                    text=True, env=env, capture_output=True)
 
 
-def run_gate(home, sid, tpath, cwd, stop_active=False):
+def run_gate(home, sid, tpath, cwd, stop_active=False, last_message=None):
     ev = {"session_id": sid, "transcript_path": tpath, "cwd": cwd,
           "hook_event_name": "Stop", "stop_hook_active": stop_active}
+    if last_message is not None:
+        ev["last_assistant_message"] = last_message
     env = dict(os.environ, RECEIPTS_HOME=home)
     p = subprocess.run([sys.executable, GATE], input=json.dumps(ev),
                        text=True, env=env, capture_output=True)
@@ -413,6 +415,32 @@ def t_plain_pass_fail_summary_is_read(home, tmp):
     v, p, f, _ = checks.verdict("python3 tests/test_receipts.py", "24 passed, 2 failed", "")
     assert (v, p, f) == (checks.FAIL, 24, 2), (v, p, f)
     return "plain `N passed, M failed` summaries are read"
+
+
+@case
+def t_payload_message_beats_a_lagging_transcript(home, tmp):
+    """At Stop time the transcript still ends on an earlier message.
+
+    Found live: the gate read "I'll look at the file first." from the file
+    while the reply that triggered Stop was "The fix is done.", so the claim
+    was never seen. The payload carries the real reply.
+    """
+    run_record(home, "s22", "Edit", {"file_path": "/repo/src/app.py"})
+    write_transcript(tmp + "/t22.jsonl", "I'll look at the file first.")
+    code, err = run_gate(home, "s22", tmp + "/t22.jsonl", tmp,
+                         last_message="The fix is done.")
+    assert code == 2, "the payload message must be what is checked"
+    assert "The fix is done." in err, err
+    return "last_assistant_message is used, not the lagging transcript"
+
+
+@case
+def t_transcript_is_still_the_fallback(home, tmp):
+    run_record(home, "s23", "Edit", {"file_path": "/repo/src/app.py"})
+    write_transcript(tmp + "/t23.jsonl", "The fix is done.")
+    code, err = run_gate(home, "s23", tmp + "/t23.jsonl", tmp)
+    assert code == 2, "with no payload message, read the transcript"
+    return "transcript still works when the payload carries no message"
 
 
 @case

@@ -28,7 +28,12 @@ def _rows(path):
 
 
 def final_message(path):
-    """Text of the last assistant reply (all of its text blocks joined)."""
+    """Text of the last assistant reply (all of its text blocks joined).
+
+    Only a fallback: at Stop time the transcript has not caught up with the
+    reply that triggered it, so the hook payload's `last_assistant_message`
+    is the one to trust.
+    """
     rows = _rows(path)
     last_req, parts = None, []
     for d in rows:

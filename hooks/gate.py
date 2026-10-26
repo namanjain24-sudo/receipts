@@ -198,7 +198,13 @@ def main():
         return 0
 
     tpath = ev.get("transcript_path") or ""
-    final_text = transcript.final_message(tpath) if tpath else ""
+    # The Stop payload carries the reply directly. The transcript lags behind
+    # it -- at Stop time the file still ends on an earlier message -- so
+    # reading the transcript here gets the wrong text. Fall back to it only
+    # when the payload does not carry the message.
+    final_text = (ev.get("last_assistant_message") or "").strip()
+    if not final_text and tpath:
+        final_text = transcript.final_message(tpath)
     if not final_text:
         return 0
 

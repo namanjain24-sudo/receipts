@@ -1,7 +1,7 @@
 {
   "name": "receipts",
   "description": "Blocks \"done\", \"tests pass\" and \"it works\" until something in the turn actually proves it. The proof is recorded by hooks from real tool output, not by the model's own report.",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "author": {
     "name": "namanjain24-sudo"
   },
