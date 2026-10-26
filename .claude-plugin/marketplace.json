@@ -1,0 +1,14 @@
+{
+  "name": "receipts",
+  "description": "Blocks completion claims that nothing in the turn proves.",
+  "owner": { "name": "namanjain24-sudo" },
+  "plugins": [
+    {
+      "name": "receipts",
+      "description": "Don't tell me it's done, show me the receipt. Hooks record what tools actually did; the Stop hook refuses to end a turn on \"done\", \"tests pass\" or \"it works\" when the record does not back it. Catches failing, stale, subagent-hidden and inert evidence.",
+      "author": { "name": "namanjain24-sudo" },
+      "category": "quality",
+      "source": "./"
+    }
+  ]
+}
