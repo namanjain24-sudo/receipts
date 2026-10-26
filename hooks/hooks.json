@@ -1,5 +1,5 @@
 {
-  "description": "Records what tools actually did, then blocks the end of a turn when the final message claims something that record does not support.",
+  "description": "Records what tools actually did, then blocks the end of a turn when the final message claims something that record does not support. Declared in plugin.json as well, though hooks/hooks.json is discovered either way.",
   "hooks": {
     "PostToolUse": [
       {
