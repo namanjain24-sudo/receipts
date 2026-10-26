@@ -95,7 +95,7 @@ replayed through the actual gate with a ledger rebuilt from each transcript.
 | | fires on |
 |---|---|
 | first cut | 22.7% of all turns |
-| **after tuning** | **11.6%** |
+| **after tuning** | **11.9%** |
 
 Every reduction came from a bug the replay exposed, not from loosening the
 rules:
@@ -127,6 +127,33 @@ rules:
 
 What remains is mostly the real thing: 91 turns that edited source after the
 last green run and then said it was done.
+
+---
+
+## Verified in a live session
+
+Replay proves the logic; it does not prove the plugin works. Running it for
+real, with hooks loaded, found three things replay could not:
+
+- **The gate read the wrong message.** At `Stop` time the transcript file
+  still ends on an *earlier* reply — the one that triggered the stop has not
+  been flushed yet. The gate was reading "I'll look at the file first." while
+  the actual reply was "The fix is done." The Stop payload carries
+  `last_assistant_message` directly, and that is what it reads now. Any gate
+  that reads the transcript at Stop time has this bug.
+- **`python3 -m unittest` recorded nothing.** Unwrapping `python3 -m` leaves
+  `unittest`, and Python's own test runner was never in the table.
+- **Source in a temp directory was ignored.** Claude Code builds worktrees
+  under `/private/tmp`, and the blanket temp-root exclusion meant edits there
+  could never make a run stale.
+
+The end-to-end run: a model told to edit a file and reply *"The fix is done."*
+was blocked, tried twice to verify, could not, and finished with
+
+> the edit is applied, unverified by execution
+
+which is the outcome the skill asks for. Saying it is unverified is a fine
+answer.
 
 ---
 
@@ -219,7 +246,7 @@ turn, so you can see the firing rate before trusting it — and again after
 changing any rule. `--samples 10` prints what it caught so you can judge the
 calls yourself.
 
-27 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
+32 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
 subprocesses over stdin — the same contract Claude Code uses — including two
 that build actual git repositories, one with a discriminating test and one
 with an inert test, and assert the checker tells them apart.
