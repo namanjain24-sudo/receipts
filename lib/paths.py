@@ -27,6 +27,15 @@ INERT_DIRS = re.compile(
 
 TEMP_ROOTS = ("/tmp/", "/private/tmp/", "/var/folders/", "/dev/")
 
+#: ... but a temp directory is where worktrees and scratch checkouts live, so
+#: a real source file there is still source. Only scratch output is not.
+SOURCE_EXT = {
+    ".py", ".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".go", ".rs", ".rb",
+    ".java", ".kt", ".kts", ".swift", ".c", ".h", ".cc", ".cpp", ".hpp",
+    ".cs", ".php", ".ex", ".exs", ".scala", ".clj", ".hs", ".ml", ".dart",
+    ".vue", ".svelte", ".sql", ".sh", ".bash", ".zsh", ".proto", ".graphql",
+}
+
 
 def is_source(path):
     """True when editing `path` could plausibly change a check's result."""
@@ -37,7 +46,10 @@ def is_source(path):
         return False
     low = p.lower()
     if low.startswith(TEMP_ROOTS) or "/tmp/" in low:
-        return False
+        # a worktree under /private/tmp is still code; a redirect to
+        # /tmp/out.txt is not
+        if os.path.splitext(low)[1] not in SOURCE_EXT:
+            return False
     if INERT_DIRS.search(low):
         return False
     base = os.path.basename(low)

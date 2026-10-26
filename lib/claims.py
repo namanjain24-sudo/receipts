@@ -43,6 +43,8 @@ PATTERNS_EN = {
         r"\b(it'?s|this\s+is|that'?s|all)\s+(now\s+)?(done|complete|fixed|resolved|ready)\b",
         r"\b(i'?ve\s+)?(fixed|resolved|completed)\s+(it|the\s+(bug|issue|problem|error))\b",
         r"\beverything\s+(is\s+)?(now\s+)?(working|done|fixed)\b",
+        r"\b(the\s+)?(fix|bug|issue|change|patch|feature|task|migration)\s+is\s+"
+        r"(now\s+)?(done|complete|fixed|resolved|ready|in)\b",
         r"\ball\s+set\b",
     ],
 }

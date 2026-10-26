@@ -416,6 +416,30 @@ def t_plain_pass_fail_summary_is_read(home, tmp):
 
 
 @case
+def t_source_under_a_temp_root_still_counts(home, tmp):
+    """Claude Code builds worktrees under /private/tmp; code there is code."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import paths
+    table = [("/private/tmp/wt/src/main.rs", True), ("/tmp/livetest/app.py", True),
+             ("/tmp/out.txt", False), ("/tmp/results.csv", False),
+             ("/tmp/notes.md", False), ("src/app.py", True)]
+    bad = [(p, paths.is_source(p), e) for p, e in table if paths.is_source(p) != e]
+    assert not bad, bad
+    return "a worktree under /private/tmp is source; scratch output is not"
+
+
+@case
+def t_fix_is_done_is_a_claim_but_not_when_hedged(home, tmp):
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import claims
+    assert claims.find("Fix is done."), "a bare completion claim must be caught"
+    assert claims.find("The fix is done - app.py returns the sum now.")
+    assert not claims.find("Fix is done, but I could not run it."), \
+        "an explicit admission of not verifying is the honest answer, not a claim"
+    return "`fix is done` is a claim; the hedged form is not"
+
+
+@case
 def t_housekeeping_does_not_make_a_run_stale(home, tmp):
     """A README edit cannot turn a green test red."""
     run_record(home, "s18", "Bash", {"command": "pytest -q"},
