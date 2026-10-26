@@ -418,6 +418,25 @@ def t_plain_pass_fail_summary_is_read(home, tmp):
 
 
 @case
+def t_old_ledgers_are_pruned(home, tmp):
+    """Ledgers accumulate one file per session; something has to remove them."""
+    import time
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    os.environ["RECEIPTS_HOME"] = home
+    import ledger as L, importlib; importlib.reload(L)
+    L.append("fresh", {"kind": "check", "family": "test", "verdict": "pass"})
+    L.append("ancient", {"kind": "check", "family": "test", "verdict": "pass"})
+    old = os.path.join(home, "ancient.jsonl")
+    long_ago = time.time() - 30 * 86400
+    os.utime(old, (long_ago, long_ago))
+    removed = L.prune(days=7)
+    assert removed == 1, "expected 1 removed, got %s" % removed
+    assert os.path.exists(os.path.join(home, "fresh.jsonl")), "kept the recent one"
+    assert not os.path.exists(old), "removed the stale one"
+    return "ledgers older than the window are pruned"
+
+
+@case
 def t_one_problem_is_reported_once(home, tmp):
     """Found live: "Fixed it." and "All tests pass." both rest on one inert
     test, and the message listed the same problem twice."""

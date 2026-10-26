@@ -32,6 +32,7 @@ impression is not evidence.
 
 Two hooks and a command:
 
+- **`SessionStart`** drops ledgers from sessions older than a week.
 - **`PostToolUse`** writes an append-only ledger of what every Bash, Edit and
   Write call actually did — including a pass/fail verdict parsed out of the
   real output.
@@ -256,7 +257,7 @@ turn, so you can see the firing rate before trusting it — and again after
 changing any rule. `--samples 10` prints what it caught so you can judge the
 calls yourself.
 
-33 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
+34 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
 subprocesses over stdin — the same contract Claude Code uses — including two
 that build actual git repositories, one with a discriminating test and one
 with an inert test, and assert the checker tells them apart.
