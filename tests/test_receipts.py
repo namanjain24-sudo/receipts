@@ -356,6 +356,14 @@ def t_family_is_decided_by_the_program_not_the_line(home, tmp):
         ("cargo fmt", None), ("cargo fmt --check", "lint"),
         ("npx eslint --fix src/", None), ("npx eslint src/", "lint"),
         ("gofmt -w .", None),
+        # a script whose name says it is a test counts, but the shell builtin
+        # `test -f x` does not, and neither does opening the file in an editor
+        ("python3 tests/test_receipts.py", "test"), ("./run-tests.sh", "test"),
+        ("node spec/index.js", "test"), ("bash scripts/test.sh", "test"),
+        ("deno test", "test"),
+        ("test -f config.yml && echo ok", None), ('test -z "$X"', None),
+        ("cat tests/test_x.py", None), ("vim test.py", None),
+        ("bash -c 'echo hi'", None),
     ]
     bad = [(c, checks.family(c), e) for c, e in table if checks.family(c) != e]
     assert not bad, "misclassified: %s" % bad[:3]
@@ -373,6 +381,18 @@ def t_generic_failure_sniffing_stays_in_its_lane(home, tmp):
     v2, _, _, _ = checks.verdict("pytest -q", noisy, "")
     assert v2 == checks.FAIL, "a test printing error: should fail"
     return "failure sniffing applies to test/build/lint only"
+
+
+@case
+def t_plain_pass_fail_summary_is_read(home, tmp):
+    """Hand-rolled runners print `26 passed, 0 failed` and nothing else."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import checks
+    v, p, f, _ = checks.verdict("python3 tests/test_receipts.py", "26 passed, 0 failed", "")
+    assert (v, p, f) == (checks.PASS, 26, 0), (v, p, f)
+    v, p, f, _ = checks.verdict("python3 tests/test_receipts.py", "24 passed, 2 failed", "")
+    assert (v, p, f) == (checks.FAIL, 24, 2), (v, p, f)
+    return "plain `N passed, M failed` summaries are read"
 
 
 @case

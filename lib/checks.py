@@ -24,6 +24,10 @@ FAMILIES = [
     ("test",  r"^bun$",     r"^test\b"),
     ("test",  r"^ctest$",   None),
     ("test",  r"^(\./)?manage\.py$", r"^test\b"),
+    # a script whose own name says it is a test -- `python3 tests/test_x.py`,
+    # `./run-tests.sh`, `node spec/index.js`. Checked after the real runners.
+    ("test",  r"^[\w./~-]*(test|spec)[\w./-]*\.(py|js|mjs|cjs|ts|sh|rb|pl)$", None),
+    ("test",  r"^\.{0,2}/[\w./-]*(run-?tests?|tests?|specs?)(\.sh)?$", None),
     ("test",  r"^deno$",    r"^test\b"),
     ("test",  r"^(mix|rebar3)$", r"^(test|eunit|ct)\b"),
 
@@ -68,7 +72,7 @@ CLAIM_EVIDENCE = {
 WRAPPERS = {"npx", "pnpm", "yarn", "npm", "bun", "bunx", "uv", "uvx", "poetry",
             "pipenv", "rye", "pdm", "hatch", "nix-shell", "docker", "time",
             "env", "sudo", "nohup", "xargs", "command", "exec",
-            "python", "python3", "py"}
+            "python", "python3", "py", "node", "bash", "sh", "zsh", "ruby"}
 #: wrapper sub-words that carry no meaning of their own
 WRAPPER_NOISE = {"run", "exec", "x", "--", "-m", "--silent", "-s", "--yes", "-y"}
 
@@ -217,6 +221,20 @@ def _mocha(t):
     return UNKNOWN, passed, failed
 
 
+def _plain(t):
+    """`26 passed, 0 failed` -- what hand-rolled runners usually print."""
+    failed = _num(t, r"(\d+)\s+(?:tests?\s+)?failed\b")
+    passed = _num(t, r"(\d+)\s+(?:tests?\s+)?passed\b")
+    errors = _num(t, r"(\d+)\s+errors?\b")
+    if failed is None and passed is None:
+        return UNKNOWN, None, None
+    if (failed or 0) + (errors or 0) > 0:
+        return FAIL, passed, (failed or 0) + (errors or 0)
+    if passed:
+        return PASS, passed, 0
+    return UNKNOWN, passed, failed
+
+
 def _tsc(t):
     n = _num(t, r"Found\s+(\d+)\s+error")
     if n is not None:
@@ -275,6 +293,10 @@ def verdict(command, stdout, stderr, interrupted=False):
                 if v != UNKNOWN:
                     return v, p, f, "parsed the %s summary line" % label
                 break
+        else:
+            v, p, f = _plain(text)
+            if v != UNKNOWN:
+                return v, p, f, "parsed a plain pass/fail summary"
 
     if fam in ("build", "lint") and re.search(r"\b(tsc|typecheck|type-check)\b", command, re.I):
         v, p, f = _tsc(text)
@@ -302,5 +324,8 @@ def verdict(command, stdout, stderr, interrupted=False):
     if fam in ("build", "lint") and text.strip():
         return PASS, None, None, "%s produced no failure output" % fam
     if fam == "test":
+        v, p, f = _plain(text)
+        if v != UNKNOWN:
+            return v, p, f, "parsed a plain pass/fail summary"
         return UNKNOWN, None, None, "could not find a test summary in the output"
     return UNKNOWN, None, None, "no rule matched"

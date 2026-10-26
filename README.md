@@ -95,7 +95,7 @@ replayed through the actual gate with a ledger rebuilt from each transcript.
 | | fires on |
 |---|---|
 | first cut | 22.7% of all turns |
-| **after tuning** | **11.7%** |
+| **after tuning** | **11.6%** |
 
 Every reduction came from a bug the replay exposed, not from loosening the
 rules:
@@ -116,6 +116,10 @@ rules:
   change, not a check; `--check` and `--diff` turn it back into one.
 - **`git push` counted as a verification.** It is an action. Whether it worked
   is read from `git log` or `gh`, not from the push.
+- **A test run invoked as a script was invisible.** `python3 tests/test_x.py`,
+  `./run-tests.sh` and `node spec/index.js` are test runs; a script whose own
+  name says so now counts, while the shell builtin `test -f x` does not. Their
+  `N passed, M failed` output is read too.
 - **A "done" in a turn that edited nothing was gated.** 38% of all firings
   were turns like *"poora scan ho gaya"* — claims about reading, not code.
   Vague claims now need a code change; falsifiable ones (`tests pass`,
@@ -205,10 +209,17 @@ thing it is supposed to prevent:
 ## Tests
 
 ```bash
-python3 tests/test_receipts.py
+python3 tests/test_receipts.py   # the suite
+python3 tests/replay.py          # how often it would fire on YOUR sessions
 ```
 
-26 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
+`replay.py` is the harness the tuning above was done with. It rebuilds a
+ledger from each of your own transcripts and runs the real gate over every
+turn, so you can see the firing rate before trusting it — and again after
+changing any rule. `--samples 10` prints what it caught so you can judge the
+calls yourself.
+
+27 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
 subprocesses over stdin — the same contract Claude Code uses — including two
 that build actual git repositories, one with a discriminating test and one
 with an inert test, and assert the checker tells them apart.
