@@ -15,6 +15,9 @@ PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
 # check and `cd /x && cp a.csv /tmp` is not anything at all. First match wins.
 FAMILIES = [
     ("test",  r"^(pytest|py\.test|tox|nose2)$", None),
+    ("test",  r"^(unittest|unittest2|doctest|trial|bats|busted|k6|newman)$", None),
+    ("test",  r"^(playwright|cypress|nightwatch|testcafe|wdio)$", r"^(test|run|open)?"),
+    ("test",  r"^(swift|flutter|dart|elixir)$", r"^test\b"),
     ("test",  r"^(jest|vitest|mocha|ava|jasmine|karma|rspec|minitest|phpunit|pest)$", None),
     ("test",  r"^go$",      r"^test\b"),
     ("test",  r"^cargo$",   r"^(test|nextest)\b"),
@@ -221,6 +224,21 @@ def _mocha(t):
     return UNKNOWN, passed, failed
 
 
+def _unittest(t):
+    """Python's own runner: `Ran 3 tests ... OK` or `FAILED (failures=1)`."""
+    ran = _num(t, r"Ran\s+(\d+)\s+tests?")
+    m = re.search(r"^FAILED\s*\((.*)\)", t, re.M)
+    if m:
+        inner = m.group(1)
+        n = (_num(inner, r"failures=(\d+)") or 0) + (_num(inner, r"errors=(\d+)") or 0)
+        return FAIL, (ran - n if ran is not None and n else None), (n or None)
+    if re.search(r"^OK(\s|$)", t, re.M):
+        return PASS, ran, 0
+    if ran == 0:
+        return UNKNOWN, 0, 0
+    return UNKNOWN, ran, None
+
+
 def _plain(t):
     """`26 passed, 0 failed` -- what hand-rolled runners usually print."""
     failed = _num(t, r"(\d+)\s+(?:tests?\s+)?failed\b")
@@ -245,6 +263,7 @@ def _tsc(t):
 
 
 TEST_PARSERS = [
+    ("unittest", r"\b(unittest|trial)\b", _unittest),
     ("pytest", r"\b(pytest|py\.test|tox)\b", _pytest),
     ("jest",   r"\b(jest|vitest)\b",          _jest),
     ("go test", r"\bgo\s+test\b",            _gotest),

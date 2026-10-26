@@ -364,6 +364,12 @@ def t_family_is_decided_by_the_program_not_the_line(home, tmp):
         ("test -f config.yml && echo ok", None), ('test -z "$X"', None),
         ("cat tests/test_x.py", None), ("vim test.py", None),
         ("bash -c 'echo hi'", None),
+        # found by running the plugin in a live session: python's own runner
+        # was missing, so `python3 -m unittest` recorded nothing at all
+        ("python3 -m unittest -q 2>&1 | tail -50", "test"),
+        ("python3 -m unittest discover", "test"),
+        ("npx playwright test", "test"), ("flutter test", "test"),
+        ("bats tests/", "test"),
     ]
     bad = [(c, checks.family(c), e) for c, e in table if checks.family(c) != e]
     assert not bad, "misclassified: %s" % bad[:3]
@@ -381,6 +387,20 @@ def t_generic_failure_sniffing_stays_in_its_lane(home, tmp):
     v2, _, _, _ = checks.verdict("pytest -q", noisy, "")
     assert v2 == checks.FAIL, "a test printing error: should fail"
     return "failure sniffing applies to test/build/lint only"
+
+
+@case
+def t_unittest_summary_is_read(home, tmp):
+    """`Ran N tests ... OK` / `FAILED (failures=1, errors=2)`."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import checks
+    fail = ("FAIL: test_add (test_app.T.test_add)\nAssertionError: -1 != 5\n\n"
+            "Ran 1 test in 0.001s\n\nFAILED (failures=1)")
+    v, _, f, _ = checks.verdict("python3 -m unittest -q", fail, "")
+    assert (v, f) == (checks.FAIL, 1), (v, f)
+    v, p, f, _ = checks.verdict("python3 -m unittest -q", "Ran 3 tests in 0.01s\n\nOK", "")
+    assert (v, p, f) == (checks.PASS, 3, 0), (v, p, f)
+    return "unittest OK / FAILED summaries are read"
 
 
 @case
