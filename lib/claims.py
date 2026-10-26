@@ -53,7 +53,8 @@ PATTERNS_HINGLISH = {
     "builds": [r"\bbuild\s+(ho\s+gaya|clean\s+hai|pass\s+ho\s+gaya)\b"],
     "deployed": [r"\b(deploy|live)\s+ho\s+gaya\b"],
     "merged": [r"\b(push|merge|commit)\s+kar\s+diya\b"],
-    "works":  [r"\b(ab\s+)?(kaam\s+kar\s+raha|chal\s+raha)\s+hai\b", r"\bsahi\s+chal\s+raha\s+hai\b"],
+    "works":  [r"\b(ab|sahi|theek|achha|perfectly)\s+(kaam\s+kar\s+raha|chal\s+raha)\s+hai\b",
+               r"\bkaam\s+kar\s+raha\s+hai\s*[.!]*$"],
     "done":   [r"\b(ho\s+gaya|ban\s+gaya|fix\s+ho\s+gaya|theek\s+ho\s+gaya)\b",
                r"\bsab\s+(ho\s+gaya|theek\s+hai)\b"],
 }
@@ -68,6 +69,39 @@ HEDGES = [
     r"\bchahiye\b", r"\bhoga\b", r"\bkarna\s+(hai|padega)\b", r"\bnahi\b",
 ]
 
+#: an instruction to the reader is not a report about the work
+IMPERATIVES = [
+    r"\b(bolo|batao|bata\s*(do|dena)|bhej\s*(do|dena)|dekh\s*(lo|lena|le)|"
+    r"kar\s*(do|lo|lena|dena)|chala\s*(do|lo|lena)|daal\s*(do|dena))\b",
+    r"\b(tell|show|send|ping|ask)\s+me\b", r"\blet\s+me\s+know\b",
+    r"\byou\s+(can|should|could|might)\b", r"\bgo\s+ahead\b",
+    r"\brun\s+(this|it|that)\b", r"\bconfirm\s+(it|this|that)\b",
+]
+
+#: the sentence is describing something breaking, not something finishing
+BREAKAGE = [
+    r"\b(crash|fail|error|stuck|hang|sleep|stop|band|toot|down|dead|timeout|"
+    r"disconnect|revert|rollback)\w*\s+(ho\s+ga?ya|hua)\b",
+    r"\b(crashed|died|broke|timed\s+out|went\s+down|stopped\s+working)\b",
+    r"\bkhatam\s+ho\s+gaya\b",
+]
+
+#: "31 minute se chal raha hai" reports uptime, it does not claim success
+DURATIONS = [
+    r"\b\d+\s*(sec|second|min|minute|minut|hour|ghant|din|day)\w*\s+se\b",
+    r"\bfor\s+\d+\s*(seconds?|minutes?|hours?)\b",
+    r"\bsince\b",
+]
+
+#: somebody else did it, so it is not this turn's work to prove
+THIRD_PARTY = [
+    r"\b[A-Z][a-zA-Z]{2,}\s+ne\s+\w+",
+    r"\b(merged|approved|closed|fixed|deployed)\s+by\s+[A-Z@]",
+    r"\b(someone|somebody|they|he|she|the\s+(team|reviewer|maintainer))\s+\w*ed\b",
+]
+
+EXCLUSIONS = HEDGES + IMPERATIVES + BREAKAGE + DURATIONS + THIRD_PARTY
+
 
 def _strip_noise(text):
     """Remove fenced code, inline code and block quotes -- claims inside those
@@ -75,6 +109,8 @@ def _strip_noise(text):
     text = re.sub(r"```.*?```", " ", text, flags=re.S)
     text = re.sub(r"`[^`\n]*`", " ", text)
     text = re.sub(r"^\s*>.*$", " ", text, flags=re.M)
+    text = re.sub(r"\"[^\"\n]{0,120}\"", " ", text)
+    text = re.sub(r"\u201c[^\u201d\n]{0,120}\u201d", " ", text)
     return text
 
 
@@ -98,7 +134,7 @@ def find(text, locales=("en",)):
     for sent in _sentences(_strip_noise(text)):
         if sent.endswith("?"):
             continue
-        if any(re.search(h, sent, re.I) for h in HEDGES):
+        if any(re.search(h, sent, re.I) for h in EXCLUSIONS):
             continue
         for kind, pats in table.items():
             if any(re.search(p, sent, re.I) for p in pats):

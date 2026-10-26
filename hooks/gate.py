@@ -11,11 +11,27 @@ Five ways a "done" goes wrong, in the order they are worth reporting:
   3. a SUBAGENT reported failure that the summary dropped
   4. the test is INERT -- green with or without the change (needs /prove)
   5. there is NO evidence of the claimed kind at all
+
+The vague claim kinds ("done", "it works") only count when the session
+actually changed something. Replaying 1,352 real turns, 38% of all firings
+were in turns that edited nothing at all -- a "scan ho gaya" or "pattern
+confirmed" is a claim about reading, not about code, and there is nothing
+for it to prove.
 """
 import json, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
 import checks, claims, ledger, transcript  # noqa: E402
+
+#: families whose output we can actually read, so an unreadable result there
+#: is suspicious. A `git log` or a `curl` that we could not parse is ordinary,
+#: and blocking on it was the single noisiest rule when replaying real turns.
+READABLE = {"test", "build", "lint"}
+
+#: claims naming a concrete, falsifiable action. These are worth checking even
+#: in a session that changed no files -- "tests pass" stands on its own.
+#: The vague ones ("done", "it works") need a code change to be about code.
+SPECIFIC_KINDS = {"tests", "builds", "lints", "deployed", "merged"}
 
 SUBAGENT_FAIL = [
     r"\b\d+\s+(tests?|specs?|checks?)\s+failed\b",
@@ -70,8 +86,16 @@ def evaluate(final_text, entries, subagent_texts, cfg):
         return problems
 
     enabled = set(cfg.get("checks", []))
-    last_mut = ledger.last_mutation(entries)
+    # staleness only cares about source: a README edit cannot turn a green
+    # test red, and counting it was the noisiest rule on real sessions.
+    last_mut = ledger.last_mutation(entries, source_only=True)
+    any_mut = ledger.last_mutation(entries)
     seen_kinds = set()
+
+    # A vague claim in a session that changed nothing is a claim about
+    # reading, not about code. Measured on 1,352 real turns, dropping these
+    # removes 38% of all firings and none of the real ones.
+    vague_ok = any_mut is not None
 
     for kind, sentence in found:
         if kind in seen_kinds:
@@ -102,6 +126,8 @@ def evaluate(final_text, entries, subagent_texts, cfg):
                 continue
 
         if not relevant and "missing" in enabled:
+            if kind not in SPECIFIC_KINDS and not vague_ok:
+                continue  # nothing was changed, so there is nothing to prove
             problems.append((
                 "missing", kind, sentence,
                 "nothing in this session ran a %s check"
@@ -116,8 +142,11 @@ def evaluate(final_text, entries, subagent_texts, cfg):
                     % (describe(passing[-1]), last_mut.get("file", "code")[:80])))
                 continue
 
-        if not passing and relevant and "missing" in enabled:
-            unknown = relevant[-1]
+        unreadable = [e for e in relevant if e.get("family") in READABLE]
+        if not passing and unreadable and "missing" in enabled:
+            if kind not in SPECIFIC_KINDS and not vague_ok:
+                continue
+            unknown = unreadable[-1]
             problems.append((
                 "missing", kind, sentence,
                 "a %s command ran but its result could not be read (%s)"

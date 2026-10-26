@@ -9,7 +9,7 @@ session it is keeping books for.
 import json, os, re, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
-import checks, ledger  # noqa: E402
+import checks, ledger, paths  # noqa: E402
 
 MUTATING_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
@@ -21,6 +21,8 @@ WRITES = [
     r"\b(cp|mv|rm|mkdir|touch|truncate|tee|dd)\s",
     r"\bgit\s+(checkout|restore|apply|revert|stash|reset|merge|rebase|cherry-pick)\b",
     r"\bpatch\s+-",
+    r"\b(prettier|biome|black|isort|rustfmt|gofmt|clang-format)\b[^|&;]*\s(--write|-w|-i)\b",
+    r"\b(cargo\s+fmt|go\s+fmt|ruff\s+format|npm\s+run\s+format)\b",
     r"\b(npm|yarn|pnpm|bun|pip3?|poetry|cargo|go)\s+(install|add|get|remove|uninstall)\b",
     # a redirect into a real file, but not into a throwaway one -- writing a
     # test log to /tmp is not a code change, and treating it as one would make
@@ -43,9 +45,10 @@ def main():
         tout = {}
 
     if tool in MUTATING_TOOLS:
+        f = tin.get("file_path") or tin.get("notebook_path") or "?"
         ledger.append(sid, {
-            "kind": "mutation", "tool": tool,
-            "file": tin.get("file_path") or tin.get("notebook_path") or "?",
+            "kind": "mutation", "tool": tool, "file": f,
+            "source": paths.is_source(f),
         })
         return
 
@@ -72,7 +75,15 @@ def main():
         })
 
     if any(re.search(p, cmd) for p in WRITES):
-        ledger.append(sid, {"kind": "mutation", "tool": "Bash", "file": cmd[:200]})
+        # Only a shell write we can pin to a source file resets the staleness
+        # clock. `rm /tmp/x` and `mkdir build` are housekeeping, and counting
+        # them was the noisiest rule when replaying real sessions.
+        targets = [t for t in paths.bash_targets(cmd) if paths.is_source(t)]
+        ledger.append(sid, {
+            "kind": "mutation", "tool": "Bash",
+            "file": targets[0] if targets else cmd[:120],
+            "source": bool(targets),
+        })
 
 
 if __name__ == "__main__":

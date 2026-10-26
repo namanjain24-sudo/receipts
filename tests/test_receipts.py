@@ -329,6 +329,99 @@ def t_inert_block_tells_you_what_to_do(home, tmp):
     return "inert block carries the inert-specific next step"
 
 
+@case
+def t_family_is_decided_by_the_program_not_the_line(home, tmp):
+    """Regressions found by replaying 1,355 real turns."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import checks
+    table = [
+        # the whole-line regex that used to live here called these checks
+        ("cd /Users/x/brain && cp results.csv /tmp/out.csv", None),
+        ("echo 'curl is great'", None),
+        ("for f in providers/celery/src/x; do echo $f; done", None),
+        ("grep -r curl .", None),
+        ("node server.js &", None),
+        # an action is not a verification
+        ("git push origin main", None),
+        ("git status --short", "vcs"),
+        # wrappers must be unwrapped
+        ("npx jest src/", "test"), ("uv run pytest -q", "test"),
+        ("python3 -m pytest -q", "test"), ("cd app && npm test", "test"),
+        ("pnpm exec tsc --noEmit", "lint"), ("mvn -q clean test", "test"),
+        ("python3 manage.py test", "test"),
+        # formatters rewrite files; only their check mode verifies anything
+        ("uv run ruff format src/", None), ("ruff check src/", "lint"),
+        ("npx prettier --write x.js", None), ("npx prettier --check x.js", "lint"),
+        ("black .", None), ("black --check .", "lint"),
+        ("cargo fmt", None), ("cargo fmt --check", "lint"),
+        ("npx eslint --fix src/", None), ("npx eslint src/", "lint"),
+        ("gofmt -w .", None),
+    ]
+    bad = [(c, checks.family(c), e) for c, e in table if checks.family(c) != e]
+    assert not bad, "misclassified: %s" % bad[:3]
+    return "%d command classifications, program-token based" % len(table)
+
+
+@case
+def t_generic_failure_sniffing_stays_in_its_lane(home, tmp):
+    """An "error:" inside unrelated output must not become a failed check."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    import checks
+    noisy = "fetched 300 rows\nerror: field is null for 2 rows\ndone"
+    v, _, _, _ = checks.verdict("curl -s https://api.example.com/x", noisy, "")
+    assert v != checks.FAIL, "http output must not be failure-sniffed: %s" % v
+    v2, _, _, _ = checks.verdict("pytest -q", noisy, "")
+    assert v2 == checks.FAIL, "a test printing error: should fail"
+    return "failure sniffing applies to test/build/lint only"
+
+
+@case
+def t_housekeeping_does_not_make_a_run_stale(home, tmp):
+    """A README edit cannot turn a green test red."""
+    run_record(home, "s18", "Bash", {"command": "pytest -q"},
+               {"stdout": "==== 9 passed in 0.5s ====", "stderr": ""})
+    run_record(home, "s18", "Edit", {"file_path": "/repo/README.md"})
+    run_record(home, "s18", "Bash", {"command": "rm /tmp/scratch.txt"},
+               {"stdout": "", "stderr": ""})
+    run_record(home, "s18", "Bash", {"command": "mkdir -p build"},
+               {"stdout": "", "stderr": ""})
+    write_transcript(tmp + "/t18.jsonl", "All tests pass.")
+    code, err = run_gate(home, "s18", tmp + "/t18.jsonl", tmp)
+    assert code == 0, "docs and housekeeping must not count as stale:\n%s" % err
+    return "README edit + temp-file churn -> run is still fresh"
+
+
+@case
+def t_source_edit_still_makes_a_run_stale(home, tmp):
+    run_record(home, "s19", "Bash", {"command": "pytest -q"},
+               {"stdout": "==== 9 passed in 0.5s ====", "stderr": ""})
+    run_record(home, "s19", "Edit", {"file_path": "/repo/README.md"})
+    run_record(home, "s19", "Bash", {"command": "sed -i '' s/a/b/ src/core.py"},
+               {"stdout": "", "stderr": ""})
+    write_transcript(tmp + "/t19.jsonl", "All tests pass.")
+    code, err = run_gate(home, "s19", tmp + "/t19.jsonl", tmp)
+    assert code == 2, "a source edit must still make the run stale"
+    assert "src/core.py" in err, "the message should name the file:\n%s" % err
+    return "sed -i on a source file -> stale, and the file is named"
+
+
+@case
+def t_vague_claim_without_any_change_is_left_alone(home, tmp):
+    """"scan ho gaya" in a read-only turn is not a claim about code."""
+    write_transcript(tmp + "/t20.jsonl", "Poora scan ho gaya, sab verify ho gaya.")
+    code, err = run_gate(home, "s20", tmp + "/t20.jsonl", tmp)
+    assert code == 0, "a read-only turn must not be gated:\n%s" % err
+    return "vague claim, nothing edited -> not gated"
+
+
+@case
+def t_specific_claim_is_gated_even_without_changes(home, tmp):
+    write_transcript(tmp + "/t21.jsonl", "All tests pass.")
+    code, err = run_gate(home, "s21", tmp + "/t21.jsonl", tmp)
+    assert code == 2, "a falsifiable claim is checked regardless of edits"
+    return "specific claim, nothing edited -> still gated"
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix="receipts-test-")
     home = os.path.join(tmp, "ledgers")

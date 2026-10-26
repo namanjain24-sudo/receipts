@@ -72,6 +72,17 @@ FAILED tests/test_parser.py::test_nested — AssertionError: expected 3, got 2
 Not `I ran the tests and they pass`. The first can be checked by the reader.
 The second asks them to trust you.
 
+## What the gate ignores
+
+Tuned against 1,356 real turns, so it stays quiet about:
+
+- **hedges** — *"tests should pass"*, *"once you install deps"*
+- **instructions to the reader** — *"bata dena kaisa chal raha hai"*
+- **breakage** — *"nginx crash ho gaya"* is not a completion
+- **other people's work** — *"PR merged by someone"*
+- **read-only turns** — a vague *"done"* in a turn that edited nothing
+- **docs and housekeeping** — a README edit does not make a test run stale
+
 ## Configuration
 
 `.claude/receipts.json`, all fields optional:

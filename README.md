@@ -86,6 +86,46 @@ your change, so it does not prove the change works
 
 ---
 
+## Measured on real sessions
+
+A gate nobody can live with gets uninstalled in a day, so this one was tuned
+against **1,356 real turn-ending messages** from 119 Claude Code sessions,
+replayed through the actual gate with a ledger rebuilt from each transcript.
+
+| | fires on |
+|---|---|
+| first cut | 22.7% of all turns |
+| **after tuning** | **11.7%** |
+
+Every reduction came from a bug the replay exposed, not from loosening the
+rules:
+
+- **`cd /x && cp a.csv /tmp` was classified as an HTTP check.** The family was
+  matched against the whole command line, so anything containing a URL — or
+  the word `curl` inside a quoted string — became a deployment check. Now the
+  family comes from the **program being run**, after splitting the line into
+  simple commands and unwrapping `npx`, `uv run`, `pnpm exec`, `python3 -m`.
+- **`error:` inside unrelated output was read as a failed command.** Generic
+  failure sniffing now applies only to `test`, `build` and `lint`, where the
+  output shape is understood. This alone cut false failures from 76 to 21.
+- **A README edit made a green test run look stale.** Staleness now only
+  counts changes to files that could plausibly change the result — not docs,
+  not `/tmp`, not `node_modules`, not `dist`.
+- **`ruff format` and `black .` counted as passing lint checks**, so a run
+  went stale against its own reformatting. A formatter in write mode is a
+  change, not a check; `--check` and `--diff` turn it back into one.
+- **`git push` counted as a verification.** It is an action. Whether it worked
+  is read from `git log` or `gh`, not from the push.
+- **A "done" in a turn that edited nothing was gated.** 38% of all firings
+  were turns like *"poora scan ho gaya"* — claims about reading, not code.
+  Vague claims now need a code change; falsifiable ones (`tests pass`,
+  `deployed`) are still checked on their own.
+
+What remains is mostly the real thing: 91 turns that edited source after the
+last green run and then said it was done.
+
+---
+
 ## Install
 
 ```bash
@@ -168,7 +208,7 @@ thing it is supposed to prevent:
 python3 tests/test_receipts.py
 ```
 
-20 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
+26 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
 subprocesses over stdin — the same contract Claude Code uses — including two
 that build actual git repositories, one with a discriminating test and one
 with an inert test, and assert the checker tells them apart.

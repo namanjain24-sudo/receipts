@@ -43,8 +43,15 @@ def read(session_id):
     return out
 
 
-def last_mutation(entries):
+def last_mutation(entries, source_only=False):
+    """The most recent mutation, optionally only ones that touched source.
+
+    Entries written before `source` was recorded have no such key; those are
+    treated as source changes, which is the cautious reading.
+    """
     muts = [e for e in entries if e.get("kind") == "mutation"]
+    if source_only:
+        muts = [e for e in muts if e.get("source", True)]
     return muts[-1] if muts else None
 
 

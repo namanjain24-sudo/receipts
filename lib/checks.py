@@ -10,37 +10,46 @@ import re
 
 PASS, FAIL, UNKNOWN = "pass", "fail", "unknown"
 
-# (family, pattern). First match wins, so order matters: a `npm test` line must
-# be seen as a test before the generic npm-script rule calls it a build.
+# (family, program, args). `program` is matched against the command's first
+# token and `args` against the rest, so `echo "curl is great"` is not an HTTP
+# check and `cd /x && cp a.csv /tmp` is not anything at all. First match wins.
 FAMILIES = [
-    ("test",   r"\b(pytest|py\.test|tox|nose2)\b"),
-    ("test",   r"\b(jest|vitest|mocha|ava|jasmine|karma)\b"),
-    ("test",   r"\bgo\s+test\b"),
-    ("test",   r"\bcargo\s+(test|nextest)\b"),
-    ("test",   r"\b(rspec|minitest|phpunit|pest)\b"),
-    ("test",   r"\bdotnet\s+test\b"),
-    ("test",   r"\b(mvn|gradle|gradlew)\b.*\btest\b"),
-    ("test",   r"\b(npm|yarn|pnpm|bun)\s+(run\s+)?test\b"),
-    ("test",   r"\bbun\s+test\b"),
-    ("test",   r"\bctest\b"),
-    ("build",  r"\b(tsc|swc)\b"),
-    ("build",  r"\b(cargo|go)\s+build\b"),
-    ("build",  r"\b(make|cmake|ninja|bazel)\b"),
-    ("build",  r"\b(vite|webpack|rollup|esbuild|parcel)\s+build\b"),
-    ("build",  r"\b(next|nuxt|astro|remix)\s+build\b"),
-    ("build",  r"\b(npm|yarn|pnpm|bun)\s+(run\s+)?build\b"),
-    ("build",  r"\bdocker\s+build\b"),
-    ("lint",   r"\b(eslint|biome|oxlint|standard)\b"),
-    ("lint",   r"\b(ruff|flake8|pylint|black|isort)\b"),
-    ("lint",   r"\b(mypy|pyright|pyre)\b"),
-    ("lint",   r"\bcargo\s+(clippy|fmt)\b"),
-    ("lint",   r"\bgo\s+vet\b"),
-    ("lint",   r"\bprettier\b.*--check"),
-    ("lint",   r"\b(npm|yarn|pnpm|bun)\s+(run\s+)?(lint|typecheck|type-check|tsc)\b"),
-    ("http",   r"\b(curl|wget|http|httpie|xh)\b"),
-    ("vcs",    r"\bgit\s+(log|status|show|diff|rev-parse|branch)\b"),
-    ("vcs",    r"\bgh\s+(pr|run|workflow|release)\b"),
-    ("vcs",    r"\bgit\s+(push|merge|commit)\b"),
+    ("test",  r"^(pytest|py\.test|tox|nose2)$", None),
+    ("test",  r"^(jest|vitest|mocha|ava|jasmine|karma|rspec|minitest|phpunit|pest)$", None),
+    ("test",  r"^go$",      r"^test\b"),
+    ("test",  r"^cargo$",   r"^(test|nextest)\b"),
+    ("test",  r"^dotnet$",  r"^test\b"),
+    ("test",  r"^(mvn|gradle|gradlew|\./gradlew)$", r"\btest\b"),
+    ("test",  r"^(npm|yarn|pnpm|bun)$", r"^(run\s+)?test\b"),
+    ("test",  r"^bun$",     r"^test\b"),
+    ("test",  r"^ctest$",   None),
+    ("test",  r"^(\./)?manage\.py$", r"^test\b"),
+    ("test",  r"^deno$",    r"^test\b"),
+    ("test",  r"^(mix|rebar3)$", r"^(test|eunit|ct)\b"),
+
+    # a typecheck is a lint, even when the same binary can also build
+    ("lint",  r"^tsc$",     r"--noEmit"),
+    ("lint",  r"^(eslint|biome|oxlint|standard|ruff|flake8|pylint|black|isort)$", None),
+    ("lint",  r"^(mypy|pyright|pyre|ty)$", None),
+    ("lint",  r"^cargo$",   r"^(clippy|fmt)\b"),
+    ("lint",  r"^go$",      r"^vet\b"),
+    ("lint",  r"^prettier$", r"--check"),
+    ("lint",  r"^(npm|yarn|pnpm|bun)$", r"^(run\s+)?(lint|typecheck|type-check|tsc)\b"),
+
+    ("build", r"^(tsc|swc)$", None),
+    ("build", r"^(cargo|go)$", r"^build\b"),
+    ("build", r"^(make|cmake|ninja|bazel)$", None),
+    ("build", r"^(vite|webpack|rollup|esbuild|parcel|next|nuxt|astro|remix)$", r"^build\b"),
+    ("build", r"^(npm|yarn|pnpm|bun)$", r"^(run\s+)?build\b"),
+    ("build", r"^docker$",  r"^build\b"),
+    ("build", r"^(mvn|gradle|gradlew|\./gradlew)$", r"\b(package|assemble|build)\b"),
+
+    ("http",  r"^(curl|wget|http|httpie|xh)$", None),
+
+    # read-only git/gh only -- `git push` is an action, and whether it worked
+    # is read from a later `git log` or from gh, not from the push itself
+    ("vcs",   r"^git$", r"^(log|status|show|diff|rev-parse|branch)\b"),
+    ("vcs",   r"^gh$",  r"^(pr|run|workflow|release|issue)\b"),
 ]
 
 #: which families can back which kind of claim
@@ -55,11 +64,94 @@ CLAIM_EVIDENCE = {
 }
 
 
+#: wrappers that run the real program as their argument
+WRAPPERS = {"npx", "pnpm", "yarn", "npm", "bun", "bunx", "uv", "uvx", "poetry",
+            "pipenv", "rye", "pdm", "hatch", "nix-shell", "docker", "time",
+            "env", "sudo", "nohup", "xargs", "command", "exec",
+            "python", "python3", "py"}
+#: wrapper sub-words that carry no meaning of their own
+WRAPPER_NOISE = {"run", "exec", "x", "--", "-m", "--silent", "-s", "--yes", "-y"}
+
+
+def _segments(command):
+    """Split a shell line into the simple commands it is made of.
+
+    Regex-matching the whole string is how `cd /x && cp a.csv /tmp` ends up
+    classified as an HTTP check because something later in the line contains
+    a URL. Only the program actually being run should decide the family.
+    """
+    text = re.sub(r"<<-?\s*'?\w+'?.*", " ", command or "", flags=re.S)  # drop heredoc bodies
+    parts = re.split(r"\|\||&&|[;|\n]", text)
+    out = []
+    for part in parts:
+        toks = part.strip().split()
+        # skip leading env assignments and `cd somewhere`
+        while toks and ("=" in toks[0].split("/")[0] and not toks[0].startswith("-")):
+            toks = toks[1:]
+        if toks and toks[0] in ("cd", "pushd") and len(toks) > 1:
+            toks = toks[2:]
+        # unwrap `npx jest`, `uv run pytest`, `pnpm exec tsc`
+        while toks and toks[0] in WRAPPERS:
+            rest = toks[1:]
+            while rest and rest[0] in WRAPPER_NOISE:
+                rest = rest[1:]
+            if not rest:
+                break
+            # `npm test` / `npm run build` keep their meaning, so stop there
+            if toks[0] in ("npm", "yarn", "pnpm", "bun") and rest[0] in (
+                    "test", "build", "lint", "typecheck", "type-check", "install", "add"):
+                toks = [toks[0], rest[0]]
+                break
+            toks = rest
+        if toks:
+            out.append(" ".join(toks))
+    return out
+
+
+#: tools that rewrite files unless told otherwise. They are changes, not
+#: checks, and treating them as checks made a green run look stale against
+#: its own reformatting.
+WRITE_BY_DEFAULT = re.compile(
+    r"^(black|isort|rustfmt|gofmt|clang-format|yapf|autopep8|dprint)$", re.I)
+WRITE_BY_DEFAULT_SUB = re.compile(
+    r"^(ruff\s+format|cargo\s+fmt|go\s+fmt|dart\s+format|mix\s+format)\b", re.I)
+#: tools that only rewrite when asked
+WRITE_FLAG = re.compile(r"(^|\s)(--write|--fix|-w|--in-place)(\s|$)", re.I)
+#: ... and the flags that turn a rewriter back into a check
+CHECK_FLAG = re.compile(r"(^|\s)(--check|--diff|--dry-run|--list-different|-l)(\s|$)", re.I)
+
+
+def _rewrites_files(seg):
+    """True when this segment edits files rather than reporting on them."""
+    toks = seg.split()
+    if not toks:
+        return False
+    if WRITE_FLAG.search(seg) and not CHECK_FLAG.search(seg):
+        return True
+    rest = " ".join(toks[1:])
+    if WRITE_BY_DEFAULT.match(toks[0]) or WRITE_BY_DEFAULT_SUB.match(seg):
+        return not CHECK_FLAG.search(rest)
+    return False
+
+
 def family(command):
-    """Name the verification family of a shell command, or None."""
-    c = " " + re.sub(r"\s+", " ", command or "") + " "
-    for name, pat in FAMILIES:
-        if re.search(pat, c, re.I):
+    """Name the verification family of a shell command, or None.
+
+    The family comes from the program being run, not from anything that
+    happens to appear elsewhere on the line.
+    """
+    for seg in _segments(command):
+        toks = seg.split()
+        if not toks:
+            continue
+        if _rewrites_files(seg):
+            continue
+        prog, args = toks[0], " ".join(toks[1:])
+        for name, prog_pat, arg_pat in FAMILIES:
+            if not re.match(prog_pat, prog, re.I):
+                continue
+            if arg_pat and not re.search(arg_pat, args, re.I):
+                continue
             return name
     return None
 
@@ -195,10 +287,15 @@ def verdict(command, stdout, stderr, interrupted=False):
             code = int(m.group(1))
             return (PASS if code < 400 else FAIL), None, None, "HTTP %d" % code
 
-    for pat in GENERIC_FAIL:
-        m = re.search(pat, text, re.I | re.M)
-        if m:
-            return FAIL, None, None, "output matched %r" % m.group(0).strip()[:60]
+    # Generic failure sniffing is only applied to families whose output we
+    # understand. Applied to everything it reads an "error:" inside a log line
+    # or a JSON field as a failed command, which is how `cp results.csv` once
+    # came back as a failing HTTP check.
+    if fam in ("test", "build", "lint"):
+        for pat in GENERIC_FAIL:
+            m = re.search(pat, text, re.I | re.M)
+            if m:
+                return FAIL, None, None, "output matched %r" % m.group(0).strip()[:60]
 
     # Nothing said it failed. That is not the same as proof that it passed,
     # except for families whose silence is meaningful.
