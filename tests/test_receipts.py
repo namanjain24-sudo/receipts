@@ -418,6 +418,27 @@ def t_plain_pass_fail_summary_is_read(home, tmp):
 
 
 @case
+def t_one_problem_is_reported_once(home, tmp):
+    """Found live: "Fixed it." and "All tests pass." both rest on one inert
+    test, and the message listed the same problem twice."""
+    sys.path.insert(0, os.path.join(ROOT, "lib"))
+    os.environ["RECEIPTS_HOME"] = home
+    import ledger as L, importlib; importlib.reload(L)
+    run_record(home, "s24", "Bash", {"command": "pytest -q"},
+               {"stdout": "==== 1 passed in 0.1s ====", "stderr": ""})
+    L.append("s24", {"kind": "inert", "cmd": "pytest -q", "status": "INERT"})
+    write_transcript(tmp + "/t24.jsonl", "x")
+    code, err = run_gate(home, "s24", tmp + "/t24.jsonl", tmp,
+                         last_message="Fixed it. All tests pass.")
+    assert code == 2, err
+    assert err.count("[inert]") == 1, "one problem, one entry:\n%s" % err
+    assert "Fixed it." in err and "All tests pass." in err, \
+        "both sentences should still be quoted:\n%s" % err
+    assert "1 claim in this message is" in err, err
+    return "one underlying problem -> one entry, both sentences quoted"
+
+
+@case
 def t_payload_message_beats_a_lagging_transcript(home, tmp):
     """At Stop time the transcript still ends on an earlier message.
 

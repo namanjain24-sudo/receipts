@@ -147,13 +147,23 @@ real, with hooks loaded, found three things replay could not:
   under `/private/tmp`, and the blanket temp-root exclusion meant edits there
   could never make a run stale.
 
-The end-to-end run: a model told to edit a file and reply *"The fix is done."*
-was blocked, tried twice to verify, could not, and finished with
+Two end-to-end runs, both from the transcripts rather than from the model's
+account of itself:
+
+**The gate.** A model told to edit a file and reply *"The fix is done."* was
+blocked, tried twice to verify, could not, and finished with
 
 > the edit is applied, unverified by execution
 
 which is the outcome the skill asks for. Saying it is unverified is a fine
 answer.
+
+**The inert check.** A repo whose test is green but never exercises the
+changed function: the live session recorded `verdict: pass, 1 passed`, then
+`/prove` ran the same suite against HEAD and wrote `INERT` to the ledger,
+and the gate refused the next *"Fixed it. All tests pass."* That run also
+showed one problem being reported once per sentence, so sentences resting on
+the same cause are now grouped.
 
 ---
 
@@ -246,7 +256,7 @@ turn, so you can see the firing rate before trusting it — and again after
 changing any rule. `--samples 10` prints what it caught so you can judge the
 calls yourself.
 
-32 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
+33 end-to-end cases. They drive `hooks/gate.py` and `hooks/record.py` as real
 subprocesses over stdin — the same contract Claude Code uses — including two
 that build actual git repositories, one with a discriminating test and one
 with an inert test, and assert the checker tells them apart.

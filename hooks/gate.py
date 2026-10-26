@@ -170,12 +170,25 @@ def evaluate(final_text, entries, subagent_texts, cfg):
 
 
 def render(problems):
-    head = ("Receipts: %d claim%s in this message %s not backed by what actually ran."
-            % (len(problems), "" if len(problems) == 1 else "s",
-               "is" if len(problems) == 1 else "are"))
-    lines = [head, ""]
+    # Two sentences can hit the same underlying problem -- "Fixed it." and
+    # "All tests pass." both rest on one inert test. Report the problem once
+    # and quote every sentence resting on it.
+    grouped = []
     for tag, kind, sentence, why in problems:
-        lines.append("  [%s] you wrote: %s" % (tag, sentence.strip()))
+        for g in grouped:
+            if g[0] == tag and g[3] == why:
+                if sentence.strip() not in g[2]:
+                    g[2].append(sentence.strip())
+                break
+        else:
+            grouped.append([tag, kind, [sentence.strip()], why])
+
+    n = len(grouped)
+    head = ("Receipts: %d claim%s in this message %s not backed by what actually ran."
+            % (n, "" if n == 1 else "s", "is" if n == 1 else "are"))
+    lines = [head, ""]
+    for tag, kind, sentences, why in grouped:
+        lines.append("  [%s] you wrote: %s" % (tag, " / ".join(sentences)))
         lines.append("           but %s." % why)
         step = INERT_HINT if tag == "inert" else NEXT_STEP.get(kind, "verify it")
         lines.append("           -> %s, then say what it printed." % step)
